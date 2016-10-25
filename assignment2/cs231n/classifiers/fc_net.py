@@ -202,7 +202,12 @@ class FullyConnectedNet(object):
     # pass of the second batch normalization layer, etc.
     self.bn_params = []
     if self.use_batchnorm:
-      self.bn_params = [{'mode': 'train'} for i in xrange(self.num_layers - 1)]
+      self.bn_params = {'bn_param' + str(i+1): {'mode': 'train'} for i in xrange(self.num_layers - 1)}
+      gammas = {'gamma' + str(i+1): np.ones(dims[i+1]) for i in xrange(self.num_layers-1)}
+      betas = {'beta' + str(i+1): np.zeros(dims[i+1]) for i in xrange(self.num_layers-1)}
+      
+      self.params.update(gammas)
+      self.params.update(betas)
     
     # Cast all parameters to the correct datatype
     for k, v in self.params.iteritems():
@@ -223,8 +228,8 @@ class FullyConnectedNet(object):
     if self.dropout_param is not None:
       self.dropout_param['mode'] = mode   
     if self.use_batchnorm:
-      for bn_param in self.bn_params:
-        bn_param[mode] = mode
+      for key, bn_param in self.bn_params.iteritems():
+        bn_param['mode'] = mode
 
     scores = None
     ############################################################################
@@ -256,7 +261,13 @@ class FullyConnectedNet(object):
             hidden['h' + str(i+1)] = h_out
             cache_h['h' + str(i+1)] = cache
         else:
-            h_out, cache = affine_relu_forward(h_in, w, b)
+            if self.use_batchnorm:
+                gamma = self.params['gamma' + str(i+1)]
+                beta = self.params['beta' + str(i+1)]
+                bn_param = self.bn_params['bn_param' + str(i+1)]
+                h_out, cache = affine_batch_relu_forward(h_in, w, b, gamma, beta, bn_param)
+            else:
+                h_out, cache = affine_relu_forward(h_in, w, b)
             hidden['h' + str(i+1)] = h_out
             cache_h['h' + str(i+1)] = cache
     
@@ -302,12 +313,37 @@ class FullyConnectedNet(object):
             grads['b' + str(i+1)] = db
             hidden['dh' + str(i)] = din
         else:
-            din, dw, db = affine_relu_backward(dout, cache)
-            grads['W' + str(i+1)] = dw + self.reg * self.params['W' + str(i+1)]
-            grads['b' + str(i+1)] = db
-            hidden['dh' + str(i)] = din
+            if self.use_batchnorm:
+                din, dw, db, dgamma, dbeta = affine_batch_relu_backward(dout, cache)
+                hidden['dh' + str(i)] = din
+                grads['W' + str(i+1)] = dw + self.reg * self.params['W' + str(i+1)]
+                grads['b' + str(i+1)] = db
+                grads['gamma' + str(i+1)] = dgamma
+                grads['beta' + str(i+1)] = dbeta
+            else:
+                din, dw, db = affine_relu_backward(dout, cache)
+                hidden['dh' + str(i)] = din
+                grads['W' + str(i+1)] = dw + self.reg * self.params['W' + str(i+1)]
+                grads['b' + str(i+1)] = db
+                
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
 
     return loss, grads
+
+def affine_batch_relu_forward(x, w, b, gamma, beta, bn_params):
+    h, fc_cache = affine_forward(x, w, b)
+    h_norm, bn_cache = batchnorm_forward(h, gamma, beta, bn_params)
+    out, relu_cache = relu_forward(h_norm)
+    
+    cache = (fc_cache, bn_cache, relu_cache)
+    return out, cache
+
+def affine_batch_relu_backward(dout, cache):
+    fc_cache, bn_cache, relu_cache = cache
+    dhnorm = relu_backward(dout, relu_cache)
+    dh, dgamma, dbeta = batchnorm_backward(dhnorm, bn_cache)
+    dx, dw, db = affine_backward(dh, fc_cache)
+    
+    return dx, dw, db, dgamma, dbeta
