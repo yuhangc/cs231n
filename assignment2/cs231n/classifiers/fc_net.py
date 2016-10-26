@@ -226,7 +226,7 @@ class FullyConnectedNet(object):
     # Set train/test mode for batchnorm params and dropout param since they
     # behave differently during training and testing.
     if self.dropout_param is not None:
-      self.dropout_param['mode'] = mode   
+      self.dropout_param['mode'] = mode
     if self.use_batchnorm:
       for key, bn_param in self.bn_params.iteritems():
         bn_param['mode'] = mode
@@ -261,6 +261,8 @@ class FullyConnectedNet(object):
             hidden['h' + str(i+1)] = h_out
             cache_h['h' + str(i+1)] = cache
         else:
+            h_out = None
+            cache = None
             if self.use_batchnorm:
                 gamma = self.params['gamma' + str(i+1)]
                 beta = self.params['beta' + str(i+1)]
@@ -270,6 +272,11 @@ class FullyConnectedNet(object):
                 h_out, cache = affine_relu_forward(h_in, w, b)
             hidden['h' + str(i+1)] = h_out
             cache_h['h' + str(i+1)] = cache
+            
+            if self.use_dropout:
+                h_drop, cache_drop = dropout_forward(h_out, self.dropout_param)
+                hidden['h' + str(i+1)] = h_drop
+                cache_h['hdrop' + str(i+1)] = cache_drop
     
     scores = hidden['h' + str(self.num_layers)]
     
@@ -313,6 +320,10 @@ class FullyConnectedNet(object):
             grads['b' + str(i+1)] = db
             hidden['dh' + str(i)] = din
         else:
+            if self.use_dropout:
+                cache_drop = cache_h['hdrop' + str(i+1)]
+                dout = dropout_backward(dout, cache_drop)
+            
             if self.use_batchnorm:
                 din, dw, db, dgamma, dbeta = affine_batch_relu_backward(dout, cache)
                 hidden['dh' + str(i)] = din

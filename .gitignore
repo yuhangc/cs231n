@@ -20,6 +20,9 @@ $RECYCLE.BIN/
 # zip files
 *.zip
 
+# ipython checkpoints
+.ipynb_checkpoints/*
+
 # =========================
 # Operating System Files
 # =========================
